@@ -1,79 +1,64 @@
 # FIFA Match Prediction with MLflow
 
-This is a small, production-style machine learning project using MLflow.
-
-The goal is to predict whether the home team wins a football match from match statistics.
-
-## Why This Is A Good ML Case
-
-The dataset is structured tabular data, which makes it a good fit for scikit-learn pipelines. It contains match context and match statistics such as possession, shots, fouls, cards, corners, formations, and the gameweek.
-
-The target is:
-
-```text
-home_win = 1 when home_score > away_score, otherwise 0
-```
-
-This is a strong classic ML problem because the inputs are a mix of numeric and categorical features, not images or free text. That makes preprocessing, model comparison, and deployment straightforward.
-
-## Feature Engineering
-
-The feature engineering in this project is intentionally simple and practical:
-
-- `gameweek`
-  - Gives the model season context. Early and late matches can behave differently because team form and squad stability change over time.
-- Match statistics such as possession, shots, saves, cards, fouls, corners, crosses, interceptions, and offsides
-  - These are direct signals of match control, attacking pressure, defensive effort, and discipline.
-  - They help the model learn which teams are creating chances and which teams are under pressure.
-- `round` and `dayofweek`
-  - These add schedule context. Match dynamics can vary across competition rounds and across the week.
-- `home_formation` and `away_formation`
-  - Formations give tactical context. They can help capture style differences that raw scorelines do not show.
-
-The preprocessing pipeline also adds a few standard ML safeguards:
-
-- numeric features are imputed with the median
-  - This keeps the pipeline robust when a match statistic is missing.
-- numeric features are standardized
-  - This helps linear models train more consistently.
-- categorical features are one-hot encoded
-  - This lets the model use formations and round/day categories without treating them as ordered values.
-- `handle_unknown="ignore"` is enabled
-  - This protects inference when a new category appears later.
-
-## Models Used And Why
-
-Two models are trained in `train.py`:
-
-- Decision Tree Classifier
-  - Used as the baseline model.
-  - It is easy to interpret and can learn non-linear rules from the tabular match data.
-  - The tree is intentionally kept shallow with `max_depth=2` and `min_samples_leaf=5` so it stays compact and does not overfit too quickly.
-- Logistic Regression
-  - Used as the challenger model.
-  - It is a strong, simple baseline for tabular classification.
-  - It often generalizes well when the features are already well prepared.
-  - It works nicely with the scaling and one-hot encoding in the preprocessing pipeline.
-
-Both models use `class_weight="balanced"` because classification targets in sports data are often not perfectly balanced. That helps the model pay attention to the smaller class instead of predicting the majority outcome too often.
+This project builds a machine-learning pipeline to predict FIFA match outcomes from team form statistics. It prepares match data, trains and compares a few scikit-learn models, tracks results in MLflow, registers the best model, and generates knockout-stage predictions.
 
 ## Project Structure
 
-```text
-data/matches.csv        # dataset
-src/data.py             # loads data and creates the target
-src/modeling.py         # preprocessing + models
-src/evaluate.py         # metrics
-src/registry.py         # MLflow model alias helpers
-train.py                # full ML lifecycle
-app.py                  # inference API
-scripts/sample_request.py  # creates an example API payload
-tests/test_data.py      # small data contract test
-```
+- `src/prepare_data.py` - transforms raw match data into training and prediction datasets
+- `src/train.py` - trains candidate models and logs metrics to MLflow
+- `src/register_model.py` - registers the best MLflow run as the production model
+- `src/prediction1.py` - loads the saved model and creates final tournament predictions
+- `data/matches.csv` - raw match dataset
+- `data/training_data.csv` - generated training set
+- `data/prediction_matches.csv` - generated prediction set for the final four
+- `data/final_predictions.csv` - generated prediction output
+- `models/best_model.pkl` - saved best model package
+- `mlflow.db` - local MLflow tracking database
+- `mlruns/` - MLflow run artifacts
 
-## Lifecycle
+## Why The Feature Engineering Helps
 
-### 1. Install dependencies
+The raw match table becomes much more useful after feature engineering because soccer outcomes depend on form, context, and tactical setup, not just the final score.
+
+- Rolling form features
+  - These summarize recent performance instead of relying only on one match.
+  - They help the model capture momentum, consistency, and short-term trends.
+  - This is useful because team strength changes over the tournament.
+- Match-statistics features
+  - Inputs such as shots, possession, fouls, and cards provide a stronger signal than score alone.
+  - They help the model understand which team controlled play and which team was under pressure.
+- Tournament-context features
+  - Final-four matches are not the same as group-stage matches.
+  - Context features help the model learn patterns that depend on stage, opponent balance, and match importance.
+- Categorical match descriptors
+  - Features like round and team identity are encoded so the model can learn team-specific and stage-specific effects.
+  - One-hot style encoding is used because these values are not ordinal.
+
+In short, the feature engineering turns raw match records into signals that better reflect form, control, and tournament pressure.
+
+## Which Models Are Used And Why
+
+This project compares three classic scikit-learn models:
+
+- Logistic Regression
+  - Used as a strong baseline.
+  - It is fast, stable, and easy to interpret.
+  - It works well when the engineered features already carry most of the signal.
+- Random Forest
+  - Used because it captures non-linear relationships and feature interactions well.
+  - It is robust on tabular data and usually performs well without much tuning.
+  - It is a good choice when the data has mixed feature types and noisy patterns.
+- Gradient Boosting
+  - Used because boosting often gives the best performance on structured tabular problems.
+  - It builds a stronger predictor by correcting previous mistakes step by step.
+  - It is useful when match outcomes depend on subtle combinations of form and context.
+
+These models give a good balance between simplicity and predictive power. Logistic Regression gives a clean baseline, Random Forest adds robustness, and Gradient Boosting often provides the strongest final score.
+
+## Requirements
+
+- Python 3.10 or newer is recommended
+- Install dependencies with:
 
 ```bash
 pip install -r requirements.txt
@@ -112,14 +97,7 @@ python src/train.py
 
 This trains Logistic Regression, Random Forest, and Gradient Boosting models, logs them to MLflow, and saves the best model to `models/best_model.pkl`.
 
-- trains a compact decision tree baseline
-- logs metrics and artifacts to MLflow
-- registers the model in the MLflow Model Registry
-- trains a logistic regression challenger
-- compares the challenger against the baseline using F1 score
-- automatically moves the `production` alias if the challenger improves enough
-
-### 4. View MLflow
+3. Register the best model in MLflow
 
 ```bash
 python src/register_model.py
@@ -162,5 +140,3 @@ After running the full pipeline, you will have:
 - a trained local model in `models/best_model.pkl`
 - an MLflow experiment with run metrics and artifacts
 - tournament predictions in `data/final_predictions.csv`
-
-# Fifa-predict-model---ML-project
