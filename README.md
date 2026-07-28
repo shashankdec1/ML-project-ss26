@@ -2,11 +2,11 @@
 
 This is a small, production-style machine learning project using MLflow.
 
-The goal is simple: predict whether the home team wins a football match from match statistics.
+The goal is to predict whether the home team wins a football match from match statistics.
 
 ## Why This Is A Good ML Case
 
-The dataset has structured tabular data: possession, shots, fouls, cards, corners, formations, and final scores.
+The dataset is structured tabular data, which makes it a good fit for scikit-learn pipelines. It contains match context and match statistics such as possession, shots, fouls, cards, corners, formations, and the gameweek.
 
 The target is:
 
@@ -14,38 +14,62 @@ The target is:
 home_win = 1 when home_score > away_score, otherwise 0
 ```
 
-This is a good classic ML problem because the input is mostly numeric/categorical tabular data, not images or text. A simple sklearn pipeline is enough and is easier to understand, test, and deploy.
+This is a strong classic ML problem because the inputs are a mix of numeric and categorical features, not images or free text. That makes preprocessing, model comparison, and deployment straightforward.
+
+## Feature Engineering
+
+The feature engineering in this project is intentionally simple and practical:
+
+- `gameweek`
+  - Gives the model season context. Early and late matches can behave differently because team form and squad stability change over time.
+- Match statistics such as possession, shots, saves, cards, fouls, corners, crosses, interceptions, and offsides
+  - These are direct signals of match control, attacking pressure, defensive effort, and discipline.
+  - They help the model learn which teams are creating chances and which teams are under pressure.
+- `round` and `dayofweek`
+  - These add schedule context. Match dynamics can vary across competition rounds and across the week.
+- `home_formation` and `away_formation`
+  - Formations give tactical context. They can help capture style differences that raw scorelines do not show.
+
+The preprocessing pipeline also adds a few standard ML safeguards:
+
+- numeric features are imputed with the median
+  - This keeps the pipeline robust when a match statistic is missing.
+- numeric features are standardized
+  - This helps linear models train more consistently.
+- categorical features are one-hot encoded
+  - This lets the model use formations and round/day categories without treating them as ordered values.
+- `handle_unknown="ignore"` is enabled
+  - This protects inference when a new category appears later.
+
+## Models Used And Why
+
+Two models are trained in `train.py`:
+
+- Decision Tree Classifier
+  - Used as the baseline model.
+  - It is easy to interpret and can learn non-linear rules from the tabular match data.
+  - The tree is intentionally kept shallow with `max_depth=2` and `min_samples_leaf=5` so it stays compact and does not overfit too quickly.
+- Logistic Regression
+  - Used as the challenger model.
+  - It is a strong, simple baseline for tabular classification.
+  - It often generalizes well when the features are already well prepared.
+  - It works nicely with the scaling and one-hot encoding in the preprocessing pipeline.
+
+Both models use `class_weight="balanced"` because classification targets in sports data are often not perfectly balanced. That helps the model pay attention to the smaller class instead of predicting the majority outcome too often.
 
 ## Project Structure
 
 ```text
-data/matches.csv           # dataset
-src/data.py                # loads data and creates the target
-src/modeling.py            # preprocessing + models
-src/evaluate.py            # metrics
-src/registry.py            # MLflow model alias helpers
-train.py                   # full ML lifecycle
-app.py                     # inference API
+data/matches.csv        # dataset
+src/data.py             # loads data and creates the target
+src/modeling.py         # preprocessing + models
+src/evaluate.py         # metrics
+src/registry.py         # MLflow model alias helpers
+train.py                # full ML lifecycle
+app.py                  # inference API
 scripts/sample_request.py  # creates an example API payload
-tests/test_data.py         # small data contract test
+tests/test_data.py      # small data contract test
 ```
-
-## Backend Intuition
-
-The backend has two parts:
-
-1. Training backend: `train.py`
-2. Inference backend: `app.py`
-
-The training backend reads the CSV, creates the target, splits the data, trains models, logs metrics to MLflow, registers model versions, and points the `production` alias to the best accepted model.
-
-The inference backend follows:
-
-```text
-football_home_win_classifier@production
-```
-
-That means the API does not need to know the exact model version. On each request, it checks which version the MLflow `production` alias points to. If the alias changed, the API reloads the new version and exposes it without code changes.
 
 ## Lifecycle
 
@@ -71,11 +95,11 @@ python train.py
 
 This command does the full lifecycle:
 
-- trains a good compact decision tree model
+- trains a compact decision tree baseline
 - logs metrics and artifacts to MLflow
 - registers the model in the MLflow Model Registry
-- trains an improved logistic regression challenger
-- compares the challenger against the old model using F1 score
+- trains a logistic regression challenger
+- compares the challenger against the baseline using F1 score
 - automatically moves the `production` alias if the challenger improves enough
 
 ### 4. View MLflow
