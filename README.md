@@ -1,145 +1,105 @@
-# Classic MLflow Lifecycle Project
+# FIFA Match Prediction with MLflow
 
-This is a small, production-style machine learning project using MLflow.
-
-The goal is simple: predict whether the home team wins a football match from match statistics.
-
-## Why This Is A Good ML Case
-
-The dataset has structured tabular data: possession, shots, fouls, cards, corners, formations, and final scores.
-
-The target is:
-
-```text
-home_win = 1 when home_score > away_score, otherwise 0
-```
-
-This is a good classic ML problem because the input is mostly numeric/categorical tabular data, not images or text. A simple sklearn pipeline is enough and is easier to understand, test, and deploy.
+This project builds a  machine-learning pipeline to predict FIFA match outcomes from team form statistics. It prepares match data, trains and compares a few scikit-learn models, tracks results in MLflow, registers the best model, and generates knockout-stage predictions.
 
 ## Project Structure
 
-```text
-data/matches.csv           # dataset
-src/data.py                # loads data and creates the target
-src/modeling.py            # preprocessing + models
-src/evaluate.py            # metrics
-src/registry.py            # MLflow model alias helpers
-train.py                   # full ML lifecycle
-app.py                     # inference API
-scripts/sample_request.py  # creates an example API payload
-tests/test_data.py         # small data contract test
-```
+- `src/prepare_data.py` - transforms raw match data into training and prediction datasets
+- `src/train.py` - trains candidate models and logs metrics to MLflow
+- `src/register_model.py` - registers the best MLflow run as the production model
+- `src/prediction1.py` - loads the saved model and creates final tournament predictions
+- `data/matches.csv` - raw match dataset
+- `data/training_data.csv` - generated training set
+- `data/prediction_matches.csv` - generated prediction set for the final four
+- `data/final_predictions.csv` - generated prediction output
+- `models/best_model.pkl` - saved best model package
+- `mlflow.db` - local MLflow tracking database
+- `mlruns/` - MLflow run artifacts
 
-## Backend Intuition
+## Requirements
 
-The backend has two parts:
-
-1. Training backend: `train.py`
-2. Inference backend: `app.py`
-
-The training backend reads the CSV, creates the target, splits the data, trains models, logs metrics to MLflow, registers model versions, and points the `production` alias to the best accepted model.
-
-The inference backend follows:
-
-```text
-football_home_win_classifier@production
-```
-
-That means the API does not need to know the exact model version. On each request, it checks which version the MLflow `production` alias points to. If the alias changed, the API reloads the new version and exposes it without code changes.
-
-## Lifecycle
-
-### 1. Install dependencies
+- Python 3.10 or newer is recommended
+- Install dependencies with:
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2. Run a quick test
+## Dependencies
+
+The project uses:
+
+- `numpy`
+- `pandas`
+- `scikit-learn`
+- `mlflow`
+- `joblib`
+
+## End-to-End Workflow
+
+Run the scripts in this order:
+
+1. Prepare the data
 
 ```bash
-python -m pytest -q
+python src/prepare_data.py
 ```
 
-### 3. Train, evaluate, register, and promote
+This reads `data/matches.csv`, creates rolling form features, and writes:
+
+- `data/training_data.csv`
+- `data/prediction_matches.csv`
+
+2. Train and evaluate models
 
 ```bash
-python train.py
+python src/train.py
 ```
 
-This command does the full lifecycle:
+This trains Logistic Regression, Random Forest, and Gradient Boosting models, logs them to MLflow, and saves the best model to `models/best_model.pkl`.
 
-- trains a good compact decision tree model
-- logs metrics and artifacts to MLflow
-- registers the model in the MLflow Model Registry
-- trains an improved logistic regression challenger
-- compares the challenger against the old model using F1 score
-- automatically moves the `production` alias if the challenger improves enough
-
-### 4. View MLflow
+3. Register the best model in MLflow
 
 ```bash
-mlflow ui --backend-store-uri sqlite:///mlflow.db
+python src/register_model.py
 ```
 
-Open:
+This finds the best completed MLflow run, registers the model as `FIFA_Match_Predictor`, and assigns the `champion` alias.
 
-```text
-http://127.0.0.1:5000
-```
-
-### 5. Serve the production model
+4. Generate final predictions
 
 ```bash
-uvicorn app:app --reload
+python src/prediction1.py
 ```
 
-Open:
-
-```text
-http://127.0.0.1:8000/docs
-```
-
-### 6. Create a sample request
-
-```bash
-python scripts/sample_request.py
-```
-
-Copy the JSON into the `/predict` endpoint in the FastAPI docs.
-
-## Why The Model Is Considered Good
-
-The model is considered good when it beats a naive decision rule using real evaluation metrics on a held-out test set.
-
-This project uses F1 score as the main promotion metric because the goal is classification and the classes may not be perfectly balanced. Accuracy is also logged, but F1 is better when false positives and false negatives both matter.
-
-The first accepted model must reach:
-
-```text
-F1 >= 0.55
-```
-
-This threshold is intentionally modest because the dataset is small. It prevents registering a clearly weak model while keeping the project realistic for a compact demo.
-
-## Automatic Improvement Rule
-
-The challenger model replaces the old production model only when:
-
-```text
-challenger_f1 >= current_f1 + 0.01
-```
-
-This avoids replacing production for tiny random changes. If the challenger is better, MLflow updates:
-
-```text
-alias production -> new model version
-```
-
-Because the API loads the model through this alias, the latest production model is exposed without changing API code.
+This loads the saved model, predicts the semi-finals, third-place match, and final, then writes the results to `data/final_predictions.csv`.
 
 ## Notes
 
-This dataset contains match statistics, so the API is best understood as an in-match or post-match prediction service. A true pre-match predictor would need only information available before kickoff, such as teams, venue, rankings, injuries, and historical form.
+- `prepare_data.py` reserves the final four matches in `matches.csv` for prediction.
+- The model predicts three classes:
+  - `0` = Away Win
+  - `1` = Draw
+  - `2` = Home Win
+- For knockout matches, if the model predicts a draw, the code selects the team with the higher win probability.
+
+## Generated Files
+
+The following files are created by the scripts and do not need to be committed:
+
+- `data/training_data.csv`
+- `data/prediction_matches.csv`
+- `data/final_predictions.csv`
+- `models/best_model.pkl`
+- `mlflow.db`
+- `mlruns/`
+
+## Example Output
+
+After running the full pipeline, you will have:
+
+- a trained local model in `models/best_model.pkl`
+- an MLflow experiment with run metrics and artifacts
+- tournament predictions in `data/final_predictions.csv`
+
+# Fifa-predict-model---ML-project
