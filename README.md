@@ -1,4 +1,4 @@
-# Classic MLflow Lifecycle Project
+# FIFA Match Prediction with MLflow
 
 This is a small, production-style machine learning project using MLflow.
 
@@ -76,24 +76,41 @@ tests/test_data.py      # small data contract test
 ### 1. Install dependencies
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2. Run a quick test
+## Dependencies
+
+The project uses:
+
+- `numpy`
+- `pandas`
+- `scikit-learn`
+- `mlflow`
+- `joblib`
+
+## End-to-End Workflow
+
+Run the scripts in this order:
+
+1. Prepare the data
 
 ```bash
-python -m pytest -q
+python src/prepare_data.py
 ```
 
-### 3. Train, evaluate, register, and promote
+This reads `data/matches.csv`, creates rolling form features, and writes:
+
+- `data/training_data.csv`
+- `data/prediction_matches.csv`
+
+2. Train and evaluate models
 
 ```bash
-python train.py
+python src/train.py
 ```
 
-This command does the full lifecycle:
+This trains Logistic Regression, Random Forest, and Gradient Boosting models, logs them to MLflow, and saves the best model to `models/best_model.pkl`.
 
 - trains a compact decision tree baseline
 - logs metrics and artifacts to MLflow
@@ -105,65 +122,45 @@ This command does the full lifecycle:
 ### 4. View MLflow
 
 ```bash
-mlflow ui --backend-store-uri sqlite:///mlflow.db
+python src/register_model.py
 ```
 
-Open:
+This finds the best completed MLflow run, registers the model as `FIFA_Match_Predictor`, and assigns the `champion` alias.
 
-```text
-http://127.0.0.1:5000
-```
-
-### 5. Serve the production model
+4. Generate final predictions
 
 ```bash
-uvicorn app:app --reload
+python src/prediction1.py
 ```
 
-Open:
-
-```text
-http://127.0.0.1:8000/docs
-```
-
-### 6. Create a sample request
-
-```bash
-python scripts/sample_request.py
-```
-
-Copy the JSON into the `/predict` endpoint in the FastAPI docs.
-
-## Why The Model Is Considered Good
-
-The model is considered good when it beats a naive decision rule using real evaluation metrics on a held-out test set.
-
-This project uses F1 score as the main promotion metric because the goal is classification and the classes may not be perfectly balanced. Accuracy is also logged, but F1 is better when false positives and false negatives both matter.
-
-The first accepted model must reach:
-
-```text
-F1 >= 0.55
-```
-
-This threshold is intentionally modest because the dataset is small. It prevents registering a clearly weak model while keeping the project realistic for a compact demo.
-
-## Automatic Improvement Rule
-
-The challenger model replaces the old production model only when:
-
-```text
-challenger_f1 >= current_f1 + 0.01
-```
-
-This avoids replacing production for tiny random changes. If the challenger is better, MLflow updates:
-
-```text
-alias production -> new model version
-```
-
-Because the API loads the model through this alias, the latest production model is exposed without changing API code.
+This loads the saved model, predicts the semi-finals, third-place match, and final, then writes the results to `data/final_predictions.csv`.
 
 ## Notes
 
-This dataset contains match statistics, so the API is best understood as an in-match or post-match prediction service. A true pre-match predictor would need only information available before kickoff, such as teams, venue, rankings, injuries, and historical form.
+- `prepare_data.py` reserves the final four matches in `matches.csv` for prediction.
+- The model predicts three classes:
+  - `0` = Away Win
+  - `1` = Draw
+  - `2` = Home Win
+- For knockout matches, if the model predicts a draw, the code selects the team with the higher win probability.
+
+## Generated Files
+
+The following files are created by the scripts and do not need to be committed:
+
+- `data/training_data.csv`
+- `data/prediction_matches.csv`
+- `data/final_predictions.csv`
+- `models/best_model.pkl`
+- `mlflow.db`
+- `mlruns/`
+
+## Example Output
+
+After running the full pipeline, you will have:
+
+- a trained local model in `models/best_model.pkl`
+- an MLflow experiment with run metrics and artifacts
+- tournament predictions in `data/final_predictions.csv`
+
+# Fifa-predict-model---ML-project
